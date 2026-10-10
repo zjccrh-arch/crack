@@ -13,9 +13,15 @@ import tempfile
 import tarfile
 
 SOURCE_SHA = "07130c2b9110a15a93b2c000ea6a90a888be98d182f2c97c1f5509ed80ed8dfa"
-VERSION = "0.3.7-15+unlocked5"
+VERSION = "0.3.7-15+unlocked6"
 PATCH = bytes.fromhex("20008052c0035fd6")
 TARGETS = {
+    "var/jb/Library/MobileSubstrate/DynamicLibraries/SwipeDeck.dylib":
+        {0: 0x7AAF0, 0x80000002: 0x80E1C},
+    "var/jb/Library/PreferenceBundles/SwipeDeckPrefs.bundle/SwipeDeckPrefs":
+        {0: 0x82714, 0x80000002: 0x89108},
+}
+STATE_ENTRIES = {
     "var/jb/Library/MobileSubstrate/DynamicLibraries/SwipeDeck.dylib":
         {0: 0x7A62C, 0x80000002: 0x8093C},
     "var/jb/Library/PreferenceBundles/SwipeDeckPrefs.bundle/SwipeDeckPrefs":
@@ -112,9 +118,12 @@ def patch_fat(fat, name):
     offsets = TARGETS[name]
     for i, subtype, offset, size, raw in slices(fat):
         entry = offsets[subtype]
-        expected = bytes.fromhex("ffc303d1fa670aa9" if subtype == 0 else "7f2303d5ffc303d1")
+        expected = bytes.fromhex("ffc303d1fc6f09a9" if subtype == 0 else "7f2303d5ffc303d1")
         assert raw[entry:entry + 8] == expected, (name, subtype, "unexpected baseline")
         result[offset + entry:offset + entry + 8] = PATCH
+        state = STATE_ENTRIES[name][subtype]
+        expected_state = bytes.fromhex("ffc303d1fa670aa9" if subtype == 0 else "7f2303d5ffc303d1")
+        assert result[offset + state:offset + state + 8] == expected_state
     return bytes(result)
 
 def build(source, output):
@@ -134,12 +143,34 @@ def build(source, output):
             for i, sub, off, size, raw in slices(signed):
                 entry = TARGETS[path][sub]
                 assert raw[entry:entry + 8] == PATCH
+                state = STATE_ENTRIES[path][sub]
+                expected_state = bytes.fromhex("ffc303d1fa670aa9" if sub == 0 else "7f2303d5ffc303d1")
+                assert raw[state:state + 8] == expected_state, "signer changed initialization entry"
                 report.append({"path": path, "subtype": hex(sub), "entry": hex(entry),
                                "code_directories": verify_codeslots(raw)})
             payload[path] = signed
     controls["control"] = controls["control"].decode("utf-8").replace(
         "Version: 0.3.7-15\n", "Version: " + VERSION + "\n").encode()
     assert controls["control"].endswith(b"Installed-Size: 5496\n")
+    postinst = controls["postinst"].decode("utf-8")
+    assert postinst.count("exit 0") == 1
+    seed = '''# Preserve existing activation data; seed only the plugin's own store.
+# RootHide runs this script inside its bootstrap filesystem view.
+set -eu
+if [ ! -e "$PREFDIR/activation.dat" ]; then
+    umask 077
+    seed_tmp="$PREFDIR/activation.dat.direct.$$"
+    trap 'rm -f "$seed_tmp"' EXIT HUP INT TERM
+    printf '%064d' 0 | tr '0' '1' > "$seed_tmp"
+    test "$(wc -c < "$seed_tmp" | tr -d ' ')" = 64
+    chown mobile:mobile "$seed_tmp"
+    chmod 600 "$seed_tmp"
+    mv "$seed_tmp" "$PREFDIR/activation.dat"
+    trap - EXIT HUP INT TERM
+fi
+'''
+    controls["postinst"] = postinst.replace("exit 0", seed + "\nexit 0").replace(
+        "@PACKAGE_VERSION@", VERSION).encode("utf-8")
     controls["md5sums"] = "".join(
         hashlib.md5(data).hexdigest() + "  " + path + "\n"
         for path, data in sorted(payload.items())
