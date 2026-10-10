@@ -26,6 +26,7 @@ jobs:
         run: |
           brew install ldid make
           git clone --recursive https://github.com/theos/theos.git "$HOME/theos"
+          rm -rf "$HOME/theos/sdks"
           git clone https://github.com/theos/sdks.git "$HOME/theos/sdks"
 
       - name: Build rootless package
