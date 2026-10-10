@@ -1,0 +1,27 @@
+name: build-swipedeck-direct
+on:
+  workflow_dispatch:
+  push:
+    branches: [main]
+    paths:
+      - "SwipeDeckDirect/**"
+      - ".github/workflows/build-swipedeck-direct.yml"
+permissions:
+  contents: read
+jobs:
+  package:
+    runs-on: macos-latest
+    steps:
+      - uses: actions/checkout@v4
+      - name: Install actual Mach-O signer
+        run: brew install ldid
+      - name: Patch all four slices and sign complete binaries
+        run: python3 SwipeDeckDirect/build.py SwipeDeckDirect/input.deb SwipeDeckDirect/packages
+      - name: Check package checksum
+        working-directory: SwipeDeckDirect/packages
+        run: shasum -a 256 -c SHA256SUMS
+      - uses: actions/upload-artifact@v4
+        with:
+          name: SwipeDeckDirect-unlocked5
+          path: SwipeDeckDirect/packages/*
+          if-no-files-found: error
