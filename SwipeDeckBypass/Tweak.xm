@@ -13,6 +13,7 @@
 static Boolean (*SD_origVerify)(SecKeyRef, SecKeyAlgorithm, CFDataRef, CFDataRef, CFErrorRef *);
 static const char *kActivationPath = "/var/mobile/Library/Preferences/com.zooah.swipedeck/activation.dat";
 static const char *kPayload = "1111111111111111111111111111111111111111111111111111111111111111";
+static const char *kActivationNotification = "com.zooah.swipedeck.activationChanged";
 
 static void SD_log(NSString *message) {
     NSString *path = @"/var/mobile/Library/Preferences/com.zooah.swipedeck/bypass-diagnostic.log";
@@ -62,14 +63,52 @@ static void SD_seedActivationStore(void) {
         created, written, (unsigned long)old.length, path, error]);
 }
 
+static void SD_postActivationChanged(void) {
+    static int (*notify_post_fn)(const char *) = NULL;
+    static void *notify_handle = NULL;
+    if (!notify_post_fn) {
+        notify_post_fn = (int (*)(const char *))dlsym(RTLD_DEFAULT, "notify_post");
+        if (!notify_post_fn) {
+            notify_handle = dlopen("/usr/lib/system/libsystem_notify.dylib", RTLD_LAZY);
+            if (notify_handle) {
+                notify_post_fn = (int (*)(const char *))dlsym(notify_handle, "notify_post");
+            }
+        }
+    }
+    int rc = notify_post_fn ? notify_post_fn(kActivationNotification) : -1;
+    [[NSNotificationCenter defaultCenter]
+        postNotificationName:[NSString stringWithUTF8String:kActivationNotification]
+                      object:nil];
+    SD_log([NSString stringWithFormat:@"activationChanged posted notify_rc=%d local=%@",
+        rc, notify_post_fn ? @"yes" : @"no"]);
+}
+
+static void SD_scheduleActivationChanged(void) {
+    dispatch_queue_t q = dispatch_get_main_queue();
+    const int delays[] = {250, 1000, 3000, 10000};
+    for (NSUInteger i = 0; i < sizeof(delays) / sizeof(delays[0]); i++) {
+        dispatch_after(dispatch_time(DISPATCH_TIME_NOW,
+                     (int64_t)delays[i] * NSEC_PER_MSEC), q, ^{
+            SD_seedActivationStore();
+            SD_postActivationChanged();
+        });
+    }
+}
+
 static id (*SD_origRead)(id, SEL, NSString *, NSUInteger, NSError **);
 static id SD_read(id cls, SEL sel, NSString *path, NSUInteger options, NSError **error) {
-    BOOL target = SD_isSwipeDeckCaller(__builtin_return_address(0))
-        && [path.lastPathComponent isEqualToString:@"activation.dat"];
+    BOOL target = [path.lastPathComponent isEqualToString:@"activation.dat"];
     id result = SD_origRead(cls, sel, path, options, error);
     if (target) {
         SD_log([NSString stringWithFormat:@"vendor read path=%@ length=%lu error=%@",
             path, (unsigned long)[result length], error ? *error : nil]);
+        if ([result length] != 64) {
+            NSData *payload = [[NSString stringWithUTF8String:kPayload]
+                dataUsingEncoding:NSUTF8StringEncoding];
+            if (error) *error = nil;
+            SD_log(@"vendor read fallback supplied 64-byte payload");
+            return payload;
+        }
     }
     return result;
 }
@@ -94,6 +133,8 @@ static void SD_install(void) {
                        (IMP)SD_read, (IMP *)&SD_origRead);
         SD_log([NSString stringWithFormat:@"read observer installed=%d", SD_origRead != NULL]);
         SD_install();
+        SD_postActivationChanged();
+        SD_scheduleActivationChanged();
         for (NSUInteger i = 1; i <= 5; i++) {
             dispatch_after(dispatch_time(DISPATCH_TIME_NOW, (int64_t)(i * 250) * NSEC_PER_MSEC),
                            dispatch_get_main_queue(), ^{ SD_install(); });

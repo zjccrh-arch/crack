@@ -28,12 +28,13 @@ rootless `.deb`，并上传带 SHA-256 的 Actions artifact。
 ## 安装与回滚
 
 ```sh
-dpkg -i com.zooah.swipedeck.bypass_1.0.1_iphoneos-arm64.deb
+dpkg -i com.zooah.swipedeck.bypass_1.0.2_iphoneos-arm64.deb
 sbreload
 ```
 
-1.0.1 是设备诊断版，记录初始化、文件写入、SwipeDeck 的 activation.dat 读取路径
-以及签名 Hook 命中次数，不记录签名数据、ECID 或任何授权码。
+1.0.2 在 1.0.1 的诊断基础上，补发 `com.zooah.swipedeck.activationChanged`
+通知，并在 `activation.dat` 读取不到 64 字节时提供同样长度的内存回退值；
+不记录签名数据、ECID 或任何授权码。
 日志位于 `/var/mobile/Library/Preferences/com.zooah.swipedeck/bypass-diagnostic.log`；
 RootHide SSH 视图可能需要从 `/rootfs/var/mobile/Library/Preferences/...` 读取。
 目前只确认 1.0.0 已注入并执行，设备最终授权状态仍需验证。
