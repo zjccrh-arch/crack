@@ -1,0 +1,51 @@
+name: build-swipedeck-bypass
+
+on:
+  workflow_dispatch:
+  push:
+    branches:
+      - main
+    paths:
+      - "SwipeDeckBypass/**"
+      - ".github/workflows/build-swipedeck-bypass.yml"
+
+permissions:
+  contents: read
+
+jobs:
+  package:
+    runs-on: macos-latest
+    defaults:
+      run:
+        working-directory: SwipeDeckBypass
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Install build dependencies
+        run: |
+          brew install ldid make
+          git clone --recursive https://github.com/theos/theos.git "$HOME/theos"
+          git clone https://github.com/theos/sdks.git "$HOME/theos/sdks"
+
+      - name: Build rootless package
+        run: THEOS="$HOME/theos" gmake package FINALPACKAGE=1
+
+      - name: Verify package
+        shell: bash
+        run: |
+          set -euo pipefail
+          deb="$(find packages -maxdepth 1 -type f -name '*.deb' -print -quit)"
+          test -n "$deb"
+          file "$deb"
+          ar -t "$deb" | grep -E 'debian-binary|control.tar|data.tar'
+          shasum -a 256 "$deb" | tee SHA256SUMS
+
+      - name: Upload installable artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: SwipeDeckBypass-rootless
+          path: |
+            SwipeDeckBypass/packages/*.deb
+            SwipeDeckBypass/SHA256SUMS
+          if-no-files-found: error
