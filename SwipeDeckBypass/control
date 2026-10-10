@@ -1,8 +1,8 @@
 Package: com.zooah.swipedeck.bypass
 Name: SwipeDeck Bypass Hook
-Version: 1.0.2
+Version: 1.1.0
 Architecture: iphoneos-arm64
 Maintainer: local
 Section: Tweaks
 Depends: firmware (>= 15.0), mobilesubstrate
-Description: Update-resilient activation hook for SwipeDeck.
+Description: Pattern-located local verifier hook preserving SwipeDeck initialization.

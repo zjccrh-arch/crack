@@ -7,8 +7,7 @@ include $(THEOS)/makefiles/common.mk
 
 TWEAK_NAME = SwipeDeckBypass
 SwipeDeckBypass_FILES = Tweak.xm
-SwipeDeckBypass_FRAMEWORKS = Foundation Security
-SwipeDeckBypass_PRIVATE_FRAMEWORKS = Security
+SwipeDeckBypass_FRAMEWORKS = Foundation
 SwipeDeckBypass_CFLAGS = -fobjc-arc -Wno-deprecated-declarations
 SwipeDeckBypass_LDFLAGS = -undefined dynamic_lookup
 

@@ -1,46 +1,24 @@
-# SwipeDeckBypass
+# SwipeDeckBypass 1.1.0
 
-这是一个独立的 Theos rootless Hook，不修改厂商 `SwipeDeck.dylib`。正版
-SwipeDeck 更新后，只要仍通过 `SecKeyVerifySignature` 完成授权校验，就不依赖
-旧版本的函数偏移，不需要重新 patch。
+独立 Hook 包，配合原版 SwipeDeck 使用，不修改厂商磁盘二进制。
 
-机制：
+- 在主 dylib 和设置 bundle 代码段中匹配验证函数的指令特征，不写死偏移。
+- 只有唯一匹配时安装 Hook；不匹配或多处匹配时停止，不盲改。
+- 保留 IsActivated 和 token/cache 初始化，只替换下层签名验证函数。
+- 从实际加载路径推导 RootHide/rootless 存储路径，不硬编码 UUID。
+- activation.dat 不存在时才创建 64 字节数据，已有文件保持不变。
+- 仅在 SpringBoard 与 Preferences 中工作，监听设置 bundle 延迟加载。
+- 不再全局 Hook NSData 或 Security.framework。
 
-- 启动时创建 `/var/mobile/Library/Preferences/com.zooah.swipedeck/activation.dat`，
-  仅在现有内容不是 64 字节时写入 64 个 Base58 `1`；
-- Hook 系统 `SecKeyVerifySignature`，仅当返回地址来自 `SwipeDeck.dylib` 时返回成功；
-  其他调用继续执行原函数；
-- 通过独立 dylib 注入，不覆盖厂商文件，支持后续正版包直接更新。
+如果更新仅改变函数位置、调用地址，现有特征可能仍适用；如果改变编译结构、
+函数签名或授权流程，需要更新 Hook。不承诺所有未来版本兼容。
 
-## 本地构建
+先安装原版 SwipeDeck，再安装本 Hook，重启 SpringBoard。
+RootHide 使用其转换流程处理 rootless DEB，不直接混装未经转换的包。
+破解主包与原版加 Hook 是两种方案，不叠加作为验证依据。
 
-在 macOS + Theos 环境：
+诊断日志位于实际插件存储目录下的 bypass-SwipeDeck.dylib.log 和
+bypass-SwipeDeckPrefs.log。它们表示 Hook 安装，不代表全部功能验证通过。
 
-```sh
-THEOS="$HOME/theos" gmake package FINALPACKAGE=1
-```
-
-## GitHub Actions
-
-仓库工作流会在 macOS runner 上安装 Theos 和 iPhoneOS SDK，编译真实 arm64/arm64e
-rootless `.deb`，并上传带 SHA-256 的 Actions artifact。
-
-## 安装与回滚
-
-```sh
-dpkg -i com.zooah.swipedeck.bypass_1.0.2_iphoneos-arm64.deb
-sbreload
-```
-
-1.0.2 在 1.0.1 的诊断基础上，补发 `com.zooah.swipedeck.activationChanged`
-通知，并在 `activation.dat` 读取不到 64 字节时提供同样长度的内存回退值；
-不记录签名数据、ECID 或任何授权码。
-日志位于 `/var/mobile/Library/Preferences/com.zooah.swipedeck/bypass-diagnostic.log`；
-RootHide SSH 视图可能需要从 `/rootfs/var/mobile/Library/Preferences/...` 读取。
-目前只确认 1.0.0 已注入并执行，设备最终授权状态仍需验证。
-
-```sh
-dpkg -r com.zooah.swipedeck.bypass
-rm -f /var/mobile/Library/Preferences/com.zooah.swipedeck/activation.dat
-sbreload
-```
+卸载 Hook 后重启 SpringBoard 可恢复原版验证行为，不删除用户配置与授权数据。
+1.0.x 的错误路径与宽泛回退方案已经替换，不再交付旧版。
